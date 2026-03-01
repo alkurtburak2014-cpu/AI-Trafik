@@ -1,10 +1,6 @@
-from traffic_controller import AdaptiveSignalController, SignalConfig, SignalStage
-
-
-def tick_to_next_green(ctrl: AdaptiveSignalController, load_a: float, load_b: float) -> None:
-    ctrl.update(ctrl.remaining + 0.01, load_a, load_b)  # GREEN->YELLOW
-    ctrl.update(ctrl.remaining + 0.01, load_a, load_b)  # YELLOW->ALL_RED
-    ctrl.update(ctrl.remaining + 0.01, load_a, load_b)  # ALL_RED->GREEN(next)
+from ai_trafik.config import SignalConfig
+from ai_trafik.controller import AdaptiveSignalController, SignalStage
+from ai_trafik.service import TrafficControlService
 
 
 def test_green_duration_respects_bounds():
@@ -25,13 +21,13 @@ def test_starvation_guard_forces_waiting_road():
     ctrl.active_road = "A"
     ctrl.stage = SignalStage.YELLOW
     ctrl.remaining = 0.0
-    ctrl.red_elapsed_b = 2.1  # B has starved
+    ctrl.red_elapsed_b = 2.1
 
-    ctrl.update(0.1, 5.0, 1.0)  # YELLOW -> ALL_RED (chooses next road)
+    ctrl.update(0.1, 5.0, 1.0)
     assert ctrl.next_road == "B"
 
     ctrl.remaining = 0.0
-    ctrl.update(0.1, 5.0, 1.0)  # ALL_RED -> GREEN(next)
+    ctrl.update(0.1, 5.0, 1.0)
     assert ctrl.active_road == "B"
 
 
@@ -45,3 +41,19 @@ def test_max_green_step_limits_jumps():
     d = ctrl._calc_green_duration("A")
     assert d <= 23.0
     assert d >= 17.0
+
+
+def test_config_validation_rejects_bad_values():
+    cfg = SignalConfig(min_green=20.0, max_green=10.0)
+    try:
+        cfg.validate()
+        assert False, "expected validate() to raise"
+    except ValueError:
+        assert True
+
+
+def test_service_tick_returns_snapshot():
+    service = TrafficControlService(SignalConfig(min_green=1.0, max_green=5.0))
+    result = service.tick(dt=0.5, load_a=2.0, load_b=1.0)
+    assert result.snapshot.active_road in {"A", "B"}
+    assert result.snapshot.remaining >= -1.0
